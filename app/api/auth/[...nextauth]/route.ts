@@ -42,11 +42,17 @@ const handler = NextAuth({
     },
 
     async jwt({token, user, trigger}){
-
-      if(user){
-        token.id = user.id
+      if (user) {
+        const dbUser = await prisma.user.findUnique({
+          where: { email: user.email! }
+        });
+        if (dbUser) {
+          token.id = dbUser.id;
+        } else {
+          token.id = user.id;
+        }
       }
-      return token
+      return token;
     },
     async session({ session, token }) {
       if (session.user) {
