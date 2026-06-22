@@ -1,3 +1,4 @@
+import prisma from "@/lib/db";
 import NextAuth from "next-auth"
 import GoogleProvider from "next-auth/providers/google"
 
@@ -14,22 +15,25 @@ const handler = NextAuth({
   callbacks: {
     async signIn({user, account, profile}){
       if (account?.provider === "google") {
-        try{
-          // const existingUser = await db.user.findUnique({ 
-          //   where: { email: user.email } 
-          // });
+        if (!profile || !user.email) {
+          return false;
+        }
+        try {
+          const existingUser = await prisma.user.findUnique({ 
+            where: { email: user.email } 
+          });
 
-          // if (!existingUser) {
-          //   await db.user.create({
-          //     data: {
-          //       email: profile.email,
-          //       name: profile.name,
-          //       image: profile.picture,
-          //     }
-            // });
-            return true;
+          if (!existingUser) {
+            await prisma.user.create({
+              data: {
+                email: profile.email || user.email,
+                name: profile.name || user.name,
+                image: (profile as any).picture || profile.image || user.image,
+              }
+            });
           }
-         catch (error) {
+          return true;
+        } catch (error) {
           console.log("Error in signin callback", error);
           return false;
         }
