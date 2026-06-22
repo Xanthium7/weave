@@ -9,6 +9,7 @@ import {
   BookOpen,
   Laptop,
   FolderGit,
+  Loader2,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -18,7 +19,7 @@ export function ChatInput() {
   const [hasText, setHasText] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
-
+  const [loading, setLoading] = useState(false)
   const handleSuggestionClick = (text: string) => {
     if (inputRef.current) {
       inputRef.current.value = `Create a ${text.toLowerCase()} with...`;
@@ -35,10 +36,13 @@ export function ChatInput() {
       if (inputRef.current === null || inputRef.current.value.trim() === "") {
         return;
       }
+      setLoading(true)
       const promptText = inputRef.current.value.trim();
       const userId = session.data.user.id;
 
+
       const newProject = await insertProject(userId, promptText);
+      setLoading(false)
       router.push(`/projects/${newProject?.id}`);
       if (inputRef.current) {
         inputRef.current.value = "";
@@ -59,13 +63,14 @@ export function ChatInput() {
           <textarea
             placeholder="Ask Weave build..."
             ref={inputRef}
+            disabled={loading}
             onChange={() => {
               const hasVal = !!inputRef.current?.value.trim();
               if (hasVal !== hasText) {
                 setHasText(hasVal);
               }
             }}
-            className="w-full flex-1 p-6 pb-2 text-[17px] text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 bg-transparent border-0 outline-none resize-none focus:ring-0 font-sans min-h-[90px]"
+            className="w-full flex-1 p-6 pb-2 text-[17px] text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 bg-transparent border-0 outline-none resize-none focus:ring-0 font-sans min-h-[90px] disabled:opacity-75"
           />
 
           {/* Action buttons footer */}
@@ -84,15 +89,19 @@ export function ChatInput() {
 
             {/* Right button (Send) */}
             <button
-              disabled={!hasText}
+              disabled={!hasText || loading}
               className={`flex items-center justify-center w-9 h-9 rounded-full transition-all duration-300 cursor-pointer ${
-                hasText
+                hasText && !loading
                   ? "bg-black dark:bg-white text-white dark:text-black hover:scale-105 shadow-md"
                   : "bg-neutral-100 dark:bg-zinc-900 text-neutral-300 dark:text-zinc-700 cursor-not-allowed"
               }`}
               onClick={handleSubmit}
             >
-              <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+              {loading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-neutral-500 dark:text-neutral-400" />
+              ) : (
+                <ArrowUp className="w-4 h-4 stroke-[2.5]" />
+              )}
             </button>
           </div>
         </div>
