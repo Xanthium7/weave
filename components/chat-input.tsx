@@ -1,13 +1,37 @@
 "use client";
 
-import React, { useState } from "react";
-import { Paperclip, Globe, ArrowUp, ShoppingBag, BookOpen, Laptop, FolderGit } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  Paperclip,
+  Globe,
+  ArrowUp,
+  ShoppingBag,
+  BookOpen,
+  Laptop,
+  FolderGit,
+} from "lucide-react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 
 export function ChatInput() {
   const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const router = useRouter();
 
   const handleSuggestionClick = (text: string) => {
     setInputValue(`Create a ${text.toLowerCase()} with...`);
+    inputRef.current?.focus();
+  };
+
+  const session = useSession();
+  const handleSubmit = () => {
+    if (!session.data) {
+      router.push("/auth/signin");
+    } else {
+      const projectId = crypto.randomUUID();
+      router.push(`/projects/${projectId}`);
+      setInputValue("");
+    }
   };
 
   return (
@@ -15,12 +39,13 @@ export function ChatInput() {
       {/* Glow effect behind the input container */}
       <div className="relative group">
         <div className="absolute -inset-16 bg-linear-to-r from-rose-500/35 via-orange-500/20 to-rose-500/35 rounded-[36px] blur-2xl opacity-80 group-hover:opacity-100 transition duration-1000 group-hover:duration-200" />
-        
+
         {/* Glassmorphic input container */}
         <div className="relative flex flex-col w-full min-h-[160px] rounded-[24px] border border-neutral-200/80 dark:border-neutral-800/80 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-xl shadow-xl transition-all duration-300 focus-within:border-rose-500/50 focus-within:shadow-[0_0_30px_rgba(244,63,94,0.15)] overflow-hidden">
           {/* Input text field */}
           <textarea
             placeholder="Ask Weave build..."
+            ref={inputRef}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             className="w-full flex-1 p-6 pb-2 text-[17px] text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 dark:placeholder-neutral-500 bg-transparent border-0 outline-none resize-none focus:ring-0 font-sans min-h-[90px]"
@@ -41,13 +66,14 @@ export function ChatInput() {
             </div>
 
             {/* Right button (Send) */}
-            <button 
+            <button
               disabled={!inputValue.trim()}
               className={`flex items-center justify-center w-9 h-9 rounded-full transition-all duration-300 cursor-pointer ${
                 inputValue.trim()
                   ? "bg-black dark:bg-white text-white dark:text-black hover:scale-105 shadow-md"
                   : "bg-neutral-100 dark:bg-zinc-900 text-neutral-300 dark:text-zinc-700 cursor-not-allowed"
               }`}
+              onClick={handleSubmit}
             >
               <ArrowUp className="w-4 h-4 stroke-[2.5]" />
             </button>
@@ -57,7 +83,7 @@ export function ChatInput() {
 
       {/* Suggestion pills container */}
       <div className="flex flex-wrap justify-center items-center gap-2 mt-5 select-none animate-float">
-        <button 
+        <button
           onClick={() => handleSuggestionClick("E-commerce website")}
           className="flex items-center gap-1.5 px-4 py-2 text-xs md:text-[13px] font-medium rounded-full border border-neutral-200/80 dark:border-neutral-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-md text-neutral-600 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-zinc-900 transition-all duration-200 shadow-sm cursor-pointer"
         >
@@ -65,7 +91,7 @@ export function ChatInput() {
           <span>E-commerce website</span>
         </button>
 
-        <button 
+        <button
           onClick={() => handleSuggestionClick("Personal blog")}
           className="flex items-center gap-1.5 px-4 py-2 text-xs md:text-[13px] font-medium rounded-full border border-neutral-200/80 dark:border-neutral-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-md text-neutral-600 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-zinc-900 transition-all duration-200 shadow-sm cursor-pointer"
         >
@@ -73,7 +99,7 @@ export function ChatInput() {
           <span>Personal blog</span>
         </button>
 
-        <button 
+        <button
           onClick={() => handleSuggestionClick("Landing page")}
           className="flex items-center gap-1.5 px-4 py-2 text-xs md:text-[13px] font-medium rounded-full border border-neutral-200/80 dark:border-neutral-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-md text-neutral-600 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-zinc-900 transition-all duration-200 shadow-sm cursor-pointer"
         >
@@ -81,7 +107,7 @@ export function ChatInput() {
           <span>Landing page</span>
         </button>
 
-        <button 
+        <button
           onClick={() => handleSuggestionClick("Portfolio site")}
           className="flex items-center gap-1.5 px-4 py-2 text-xs md:text-[13px] font-medium rounded-full border border-neutral-200/80 dark:border-neutral-800 bg-white/60 dark:bg-zinc-950/60 backdrop-blur-md text-neutral-600 dark:text-neutral-400 hover:text-neutral-950 dark:hover:text-neutral-200 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-white dark:hover:bg-zinc-900 transition-all duration-200 shadow-sm cursor-pointer"
         >
