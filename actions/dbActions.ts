@@ -37,8 +37,22 @@ export const insertProject = async (
         userId: userId,
       },
     });
-    return newProject
+    return newProject;
   } catch (err) {
     console.log("Error inserting the data in Projects Table: ", err);
+    return null;
   }
 };
+
+export const getProject = async (projectId: string) => {
+  try {
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+    });
+    return project;
+  } catch (err) {
+    console.log("Error fetching project: ", err);
+    return null;
+  }
+};
+

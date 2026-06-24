@@ -17,6 +17,8 @@
 /.next/
 /out/
 
+lovable_dump
+
 # production
 /build
 

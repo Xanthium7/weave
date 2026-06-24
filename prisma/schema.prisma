@@ -32,7 +32,7 @@ model Project {
   id String @id @default(cuid())
   name String? @default("New Project")
   userId String @map("user_id")
-  context String @map("context")
+  context Json @map("context")
   initialPrompt String @map("initial_prompt")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
