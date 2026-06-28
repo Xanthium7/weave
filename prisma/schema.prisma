@@ -32,8 +32,12 @@ model Project {
   id String @id @default(cuid())
   name String? @default("New Project")
   userId String @map("user_id")
-  context Json @map("context")
+  context Json @map("context")  // COntent[]
   initialPrompt String @map("initial_prompt")
+
+  s3BackupKey String? @map("s3_backup_key")  // matte projectid/gibberish.tar.gz
+  lastBackupAt DateTime? @map("last_backup_at")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

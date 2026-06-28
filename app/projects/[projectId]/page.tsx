@@ -18,7 +18,7 @@ import {
   ChevronRight,
   Maximize2,
 } from "lucide-react";
-import { getAiResponse } from "@/actions/contestAi";
+import { getAiResponse } from "@/actions/loop";
 
 interface Message {
   id: string;
