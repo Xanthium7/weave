@@ -33,7 +33,7 @@ export const insertProject = async (
       data: {
         name: projectName,
         initialPrompt: initalPrompt,
-        context: "",
+        context: [],
         userId: userId,
       },
     });

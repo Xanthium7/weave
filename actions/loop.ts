@@ -1,123 +1,192 @@
-"use server";
-
-import { AiResponse, memory } from "./gemini";
-import { bashTool, readFile, writeFile } from "@/utils/dummy/tools";
+import prisma from "@/lib/db";
+import { backupToS3, restoreIntoSandbox } from "@/lib/s3";
+import { bootstrapProject, createSandbox } from "@/lib/sandbox";
+import { StreamEvent } from "@/types/stream";
+import { CODING_AGENT_SYSTEM_PROMPT } from "@/utils/prompts/systemPrompt";
 import { createStreamableValue } from "@ai-sdk/rsc";
+import { Content } from "@google/genai";
+import Sandbox from "@e2b/code-interpreter";
+import { createAiStream } from "./gemini";
+import { executeTool } from "@/utils/tools";
 
-interface StreamPayload {
-  type: string;
-  response: string;
-}
+const PROJECT_DIR = "/home/user/LovableProject";
 
-export const getAiResponse = async (initalPrompt: string) => {
-  const stream = createStreamableValue<StreamPayload>({
-    type: "",
-    response: "",
-  });
+export const getAiResponse = async (projectId: string, userMessage: string) => {
+  const stream = createStreamableValue<StreamEvent>();
 
   (async () => {
-    let keepGoing = true;
+    let sandbox: Sandbox | null = null;
 
-    memory.value.push({
-      role: "user",
-      parts: [{ text: initalPrompt }],
-    });
+    try {
+      // load projecct
+      const project = await prisma.project.findUnique({
+        where: { id: projectId },
+      });
+      if (!project) {
+        stream.update({ type: "error", content: "Project not found" });
+        stream.done();
+        return;
+      }
 
-    while (keepGoing) {
-      console.log("Thinking...");
-      const response = await AiResponse();
-      const candidate = response?.candidates?.[0];
-      if (!candidate || !candidate.content) {
-        console.log("No response from AI");
+      // load context history
+      let history: Content[] = [];
+      if (project.context) {
+        history = project.context as Content[];
+      } else {
+        // or cook up a new history
+        history = [
+          {
+            role: "user",
+            parts: [{ text: CODING_AGENT_SYSTEM_PROMPT }],
+          },
+          {
+            role: "model",
+            parts: [
+              {
+                text: "Understood. I will use the provided tools to build your project inside the sandbox.",
+              },
+            ],
+          },
+        ];
+      }
+
+      // create a new sandbox
+      sandbox = await createSandbox();
+
+      // backup the code if it exists
+      if (project.s3BackupKey) {
+        try {
+          const restored = await restoreIntoSandbox(sandbox, projectId);
+          if (restored) {
+            stream.update({ type: "restored-from-backup" });
+            const previewUrl = await bootstrapProject(sandbox);
+            if (previewUrl) {
+              stream.update({ type: "preview-url", url: previewUrl });
+            }
+          }
+        } catch (error) {
+          console.error("Failed to restore code:", error);
+        }
+      }
+
+      history.push({
+        role: "user",
+        parts: [{ text: userMessage }],
+      });
+
+      //------------------------- the main agent loop -------------------------
+      let keepGoing = true;
+      let loopCount = 0;
+      const MAX_LOOPS = 50;
+
+      while (keepGoing && loopCount < MAX_LOOPS) {
+        loopCount++;
+
+        const streamResponse = await createAiStream(history);
+        let fullText = "";
+        const functionCalls = [];
+
+        for await (const chunk of streamResponse) {
+          const candidate = chunk.candidates?.[0];
+          if (!candidate?.content?.parts) continue;
+
+          for (const part of candidate.content.parts) {
+            if (part.text) {
+              fullText += part.text;
+              stream.update({ type: "text-delta", content: part.text });
+            }
+            if (part.functionCall) {
+              functionCalls.push({
+                name: part.functionCall.name!,
+                args: part.functionCall.args as Record<string, unknown>,
+              });
+            }
+          }
+        }
+
+        // now execute all the tools in the fucntionCalls[]
+
+        if (functionCalls.length > 0) {
+          history.push({
+            role: "model",
+            parts: functionCalls.map((fc) => ({
+              functionCall: { name: fc.name, args: fc.args },
+            })),
+          });
+
+          const functionResponse = [];
+
+          for (const fc of functionCalls) {
+            stream.update({ type: "tool-call", tool: fc.name, args: fc.args });
+            const result = await executeTool(
+              sandbox!,
+              fc.name,
+              fc.args,
+              stream,
+            );
+            stream.update({ type: "tool-result", tool: fc.name, result });
+
+            functionResponse.push({
+              functionResponse: {
+                name: fc.name,
+                response: { output: JSON.stringify(result) },
+              },
+            });
+          }
+
+          history.push({ role: "model", parts: functionResponse });
+        } else {
+          if (fullText) {
+            history.push({ role: "model", parts: [{ text: fullText }] });
+            stream.update({ type: "text-complete", content: fullText });
+          }
+          keepGoing = false;
+        }
+      }
+
+      if (loopCount >= MAX_LOOPS) {
+        stream.update({ type: "error", content: "Max iterations reached" });
+      }
+
+      // fallback incase llm forgets to send preview
+      try {
+        const host = sandbox!.getHost(3000);
+        stream.update({ type: "preview-url", url: `https://${host}` });
+      } catch (err) {
         stream.update({
           type: "error",
-          response: "Error: No response from AI",
+          content: "Could not generate preview url",
         });
-        break;
       }
 
-      memory.value.push(candidate.content);
+      // after every complete cycle we update the context in the db
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { context: history as any },
+      });
 
-      if (response.functionCalls && response.functionCalls.length > 0) {
-        const functionCall = response.functionCalls[0];
-
-        if (functionCall.name === "run_bash_command") {
-          const command = functionCall?.args?.command;
-          console.log("Agent wants to run command: ", command);
-          stream.update({
-            type: "toolCall",
-            response: command as string,
-          });
-          const toolResult = bashTool(command as string);
-
-          memory.value.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: functionCall.name,
-                  response: {
-                    output: toolResult.content,
-                  },
-                },
-              },
-            ],
-          });
-        } else if (functionCall.name === "read_file") {
-          const path = functionCall?.args?.path;
-          console.log("Agent wants to read file: ", path);
-          stream.update({
-            type: "toolCall",
-            response: `Reading: ${path}`,
-          });
-          const toolResult = readFile(path as string);
-
-          memory.value.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: functionCall.name,
-                  response: {
-                    output: toolResult,
-                  },
-                },
-              },
-            ],
-          });
-        } else if (functionCall.name === "write_file") {
-          const path = functionCall?.args?.path;
-          const fileContents = functionCall?.args?.fileContents;
-          console.log("Agent wants to write file: ", path);
-          const toolResult = writeFile(path as string, fileContents as string);
-
-          memory.value.push({
-            role: "user",
-            parts: [
-              {
-                functionResponse: {
-                  name: functionCall.name,
-                  response: {
-                    output: toolResult,
-                  },
-                },
-              },
-            ],
-          });
-        }
-      } else {
-        const text = candidate?.content?.parts?.[0]?.text;
-        if (text) {
-          console.log(text);
-          stream.update({
-            type: "message",
-            response: text,
-          });
-        }
-        keepGoing = false;
+      // also after that we have to backup to s3 as well
+      try {
+        const version = await backupToS3(sandbox!, projectId);
+        await prisma.project.update({
+          where: { id: projectId },
+          data: {
+            s3BackupKey: `projects/${projectId}/v${version}.tar.gz`,
+            lastBackupAt: new Date(),
+          },
+        });
+        stream.update({ type: "backup-complete", version})
+      } catch (err) {
+        console.error("[Backup] Failed: ", err)
       }
+
+      stream.update({type: "done"})
+    } catch (error: any) {
+        console.error("[Loop] Fatal: ", error)
+        stream.update({type: "error", content: error.message || "Unexpected error" })
+    } finally {
+      stream.done();
     }
-    stream.done();
   })();
 
   return stream.value;

@@ -7,7 +7,7 @@ export async function createSandbox() {
   });
 }
 
-// to restore code, install deps, and strat dev server
+// to restore code, install deps, and strat dev server - gives the preview url 
 export async function bootstrapProject(
   sandbox: Sandbox,
   projectDir: string = "home/user/LovableProject",
@@ -23,7 +23,7 @@ export async function bootstrapProject(
     },
   );
 
-  // give server time to start 
+  // give server time to start
   await new Promise((resolve) => setTimeout(resolve, 4000));
 
   try {

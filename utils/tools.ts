@@ -1,3 +1,5 @@
+import { StreamEvent } from "@/types/stream";
+import { createStreamableValue } from "@ai-sdk/rsc";
 import type Sandbox from "@e2b/code-interpreter";
 import { Type } from "@google/genai";
 
@@ -210,6 +212,93 @@ const runCommandTool = {
     required: ["command"]
   }
 };
+
+export async function executeTool(
+  sandbox: Sandbox,
+  toolName: string,
+  args: Record<string,  unknown>,
+  stream: ReturnType<typeof createStreamableValue<StreamEvent>>
+){
+  try {
+    switch (toolName) {
+      case "writeFile": {
+        const path = args.path as string;
+        const content = args.fileContents as string;
+        await writeFile(sandbox, path, content);
+        stream.update({ type: "file-write", path, content });
+        return { success: true, path };
+      }
+
+      case "readFile": {
+        const path = args.path as string;
+        const content = await readFile(sandbox, path);
+        return { content };
+      }
+
+      case "updateFile": {
+        const path = args.path as string;
+        await updateFile(
+          sandbox, path,
+          args.startLine as number,
+          args.endLine as number,
+          args.replacementContent as string
+        );
+        const updatedContent = await readFile(sandbox, path);
+        stream.update({ type: "file-write", path, content: updatedContent });
+        return { success: true, path };
+      }
+
+      case "listFiles": {
+        const path = args.path as string;
+        const files = await listFiles(sandbox, path);
+        return { files };
+      }
+
+      case "deleteFile": {
+        const path = args.path as string;
+        await deletFile(sandbox, path);
+        stream.update({ type: "file-delete", path });
+        return { success: true, path };
+      }
+
+      case "runCommand": {
+        const command = args.command as string;
+        stream.update({ type: "command-run", command });
+
+        const result = await runCommand(sandbox, command, {
+          cwd: args.cwd as string | undefined,
+          background: args.background as boolean | undefined,
+        });
+
+        stream.update({
+          type: "command-output",
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        });
+
+        if (args.background && (command.includes("dev") || command.includes("start"))) {
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            const host = sandbox.getHost(3000);
+            stream.update({ type: "preview-url", url: `https://${host}` });
+          } catch {}
+        }
+
+        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+      }
+
+      default:
+        return { error: `Unknown tool: ${toolName}` };
+    }
+  } catch (err: any) {
+    console.error(`[Tool:${toolName}] Error:`, err.message);
+    return { error: err.message };
+  }
+}
+
+
+
 
 export const toolsConfig = [
   {

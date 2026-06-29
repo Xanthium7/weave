@@ -59,6 +59,7 @@ export const backupToS3 = async (sandbox: Sandbox, projectId: string) => {
 
   await sandbox.commands.run("rm -f /tmp/backup.tar.gz");
   console.log(`[S3] Backup ${projectId} -> ${key}`);
+  return nextVersion;
 };
 
 export const restoreIntoSandbox = async (
