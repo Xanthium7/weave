@@ -19,7 +19,7 @@ const s3 = new S3Client({
 
 const BUCKET = process.env.S3_BUCKET_NAME!;
 
-const PROJECT_DIR = "/home/user/LovableProjects";
+const PROJECT_DIR = "/home/user/LovableProject";
 
 export const backupToS3 = async (sandbox: Sandbox, projectId: string) => {
   const currentVersion = await getLatestVersion(projectId);
@@ -33,10 +33,13 @@ export const backupToS3 = async (sandbox: Sandbox, projectId: string) => {
   if (check.stdout.trim() !== "exists") {
     throw new Error("Project directory not found in Sandbox");
   }
-  await sandbox.commands.run(
+  const tarResult = await sandbox.commands.run(
     `tar -czf /tmp/backup.tar.gz -C ${PROJECT_DIR} --exclude=node_modules --exclude=.next --exclude=dist .`,
     { timeoutMs: 30000 },
   );
+  if (tarResult.exitCode !== 0) {
+    throw new Error(`Tar archiving failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`);
+  }
 
   const tarBytes = await sandbox.files.read("/tmp/backup.tar.gz", {
     format: "bytes",
@@ -83,9 +86,12 @@ export const restoreIntoSandbox = async (
     bodyBytes.buffer as ArrayBuffer,
   );
   await sandbox.commands.run(`mkdir -p ${PROJECT_DIR}`);
-  await sandbox.commands.run(`tar -xzf /tmp/backup.tar.gz -C ${PROJECT_DIR}`, {
+  const tarResult = await sandbox.commands.run(`tar -xzf /tmp/backup.tar.gz -C ${PROJECT_DIR}`, {
     timeoutMs: 30000,
   });
+  if (tarResult.exitCode !== 0) {
+    throw new Error(`Tar extraction failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`);
+  }
 
   await sandbox.commands.run("rm -f /tmp/backup.tar.gz");
 
@@ -93,11 +99,8 @@ export const restoreIntoSandbox = async (
   return true;
 };
 
-
-
-
 export async function extractFilesFromS3(
-  projectId: string
+  projectId: string,
 ): Promise<Record<string, string>> {
   const latestVersion = await getLatestVersion(projectId);
   if (latestVersion === 0) return {};
@@ -105,7 +108,7 @@ export async function extractFilesFromS3(
   const key = `projects/${projectId}/v${latestVersion}.tar.gz`;
 
   const response = await s3.send(
-    new GetObjectCommand({ Bucket: BUCKET, Key: key })
+    new GetObjectCommand({ Bucket: BUCKET, Key: key }),
   );
 
   const files: Record<string, string> = {};
@@ -137,11 +140,11 @@ export async function extractFilesFromS3(
       .on("error", reject);
   });
 
-  console.log(`[S3] Extracted ${Object.keys(files).length} files for ${projectId}`);
+  console.log(
+    `[S3] Extracted ${Object.keys(files).length} files for ${projectId}`,
+  );
   return files;
 }
-
-
 
 // util funcs
 
@@ -164,18 +167,15 @@ export async function getLatestVersion(projectId: string): Promise<number> {
   return maxVersion;
 }
 
-export async function listVersions(
-  projectId: string
-) {
+export async function listVersions(projectId: string) {
   const prefix = `projects/${projectId}/`;
   const response = await s3.send(
-    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix })
+    new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix }),
   );
 
   if (!response.Contents) return [];
 
-  return response.Contents
-    .filter((obj) => obj.Key?.match(/\/v\d+\.tar\.gz$/))
+  return response.Contents.filter((obj) => obj.Key?.match(/\/v\d+\.tar\.gz$/))
     .map((obj) => {
       const match = obj.Key!.match(/\/v(\d+)\.tar\.gz$/);
       return {
@@ -187,7 +187,7 @@ export async function listVersions(
     .sort((a, b) => b.version - a.version);
 }
 
-// this would look somehting liket this 
+// this would look somehting liket this
 // [
 //   {
 //     "version": 3,
@@ -205,4 +205,3 @@ export async function listVersions(
 //     "lastModified": "2026-06-28T15:00:00.000Z"
 //   }
 // ]
-

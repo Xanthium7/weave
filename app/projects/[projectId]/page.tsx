@@ -18,14 +18,9 @@ import {
   ChevronRight,
   Maximize2,
 } from "lucide-react";
-import { getAiResponse } from "@/actions/loop";
-
-interface Message {
-  id: string;
-  sender: "user" | "ai";
-  text: string;
-  timestamp: Date;
-}
+import { useStreamChat } from "@/hooks/useStreamChat";
+import { ToolActivity } from "@/components/tool-activity";
+import { FileExplorer } from "@/components/file-explorer";
 
 export default function ProjectPage() {
   const params = useParams<{ projectId: string }>();
@@ -36,10 +31,21 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null);
   const [loadingProject, setLoadingProject] = useState(true);
 
-  // Chat state
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Chat state from the useStreamChat hook
+  const {
+    messages,
+    setMessages,
+    isStreaming,
+    loadingFiles: isLoadingFiles,
+    sendMessage,
+    loadFilesFromS3,
+    previewUrl,
+    files,
+    activeToolCall,
+  } = useStreamChat(projectId);
+
   const [inputText, setInputText] = useState("");
-  const [sendingMessage, setSendingMessage] = useState(false);
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Tab State
@@ -120,49 +126,27 @@ export default function ProjectPage() {
 
     fetchProject();
   }, [projectId]);
-  const handleAiResponse = async () => {
-      await getAiResponse(inputText)
+
+  // Load project files on mount when project is available
+  useEffect(() => {
+    if (project) {
+      loadFilesFromS3();
     }
+  }, [project, loadFilesFromS3]);
 
   // 3. Scroll to bottom of chat
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sendingMessage]);
+  }, [messages, isStreaming]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || sendingMessage) return;
+    if (!inputText.trim() || isStreaming) return;
 
-    const userText = inputText.trim();
+    const text = inputText.trim();
     setInputText("");
-
-    // Add user message
-    const userMsg: Message = {
-      id: Math.random().toString(36).substring(7),
-      sender: "user",
-      text: userText,
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setSendingMessage(true);
-
-    
-
-
-    // Simulate AI response/generation pipeline
-    setTimeout(() => {
-      const aiMsg: Message = {
-        id: Math.random().toString(36).substring(7),
-        sender: "ai",
-        text: `I've analyzed your request: "${userText}". I am currently updating the stylesheet and script hooks to apply those changes. The live preview on the right will update in a moment.`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-      setSendingMessage(false);
-    }, 1800);
+    await sendMessage(text);
   };
-
-
 
   if (session.status === "loading" || loadingProject) {
     return (
@@ -224,12 +208,13 @@ export default function ProjectPage() {
                 key={msg.id}
                 text={msg.text}
                 timestamp={msg.timestamp}
+                toolCalls={msg.toolCalls}
               />
-            )
+            ),
           )}
 
           {/* AI Generation Loading Indicator Bubble */}
-          {sendingMessage && (
+          {isStreaming && (
             <div className="flex gap-3 max-w-[85%] mr-auto">
               <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center bg-rose-950/30 border border-rose-900/30 text-rose-400 animate-pulse">
                 <Bot className="w-4 h-4" />
@@ -253,7 +238,7 @@ export default function ProjectPage() {
           >
             <input
               type="text"
-              disabled={sendingMessage}
+              disabled={isStreaming}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder="Ask Weave to make adjustments..."
@@ -261,10 +246,9 @@ export default function ProjectPage() {
             />
             <button
               type="submit"
-              disabled={!inputText.trim() || sendingMessage}
-              onClick={handleAiResponse}
+              disabled={!inputText.trim() || isStreaming}
               className={`absolute right-2 flex items-center justify-center w-9 h-9 rounded-full transition-all duration-300 cursor-pointer ${
-                inputText.trim() && !sendingMessage
+                inputText.trim() && !isStreaming
                   ? "bg-rose-500 hover:bg-rose-600 text-white hover:scale-105 shadow-md shadow-rose-500/20"
                   : "bg-zinc-800 text-zinc-650 cursor-not-allowed"
               }`}
@@ -325,7 +309,7 @@ export default function ProjectPage() {
           <div className="flex items-center gap-3">
             {activeTab === "preview" && (
               <a
-                href="https://patatap.com"
+                href={previewUrl ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-rose-500/30 bg-rose-950/20 hover:bg-rose-900/30 text-rose-300 rounded-lg transition cursor-pointer hover:border-rose-500/50"
@@ -348,33 +332,27 @@ export default function ProjectPage() {
             }`}
           >
             <iframe
-              src="https://patatap.com"
+              src={previewUrl ?? "about:blank"}
               className="w-full h-full border-0 bg-zinc-950"
               title="Live Website Preview"
               allow="autoplay"
             />
           </div>
 
-          {/* STATIC CODE VIEWER */}
+          {/* CODE EXPLORER VIEW */}
           <div
             className={`w-full h-full rounded-2xl border border-rose-950/20 bg-[#070507] text-neutral-400 font-mono text-xs overflow-hidden flex flex-col shadow-2xl transition-opacity duration-300 ${
               activeTab === "code"
                 ? "opacity-100 relative z-10"
                 : "opacity-0 absolute pointer-events-none -z-10"
-              }`}
+            }`}
           >
-            {/* Clean solid black placeholder code view */}
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-[#070507]">
-              <div className="w-12 h-12 rounded-full bg-zinc-950/80 flex items-center justify-center mb-4 text-rose-500 border border-rose-950/30 shadow-inner">
-                <Code className="w-5 h-5 animate-pulse text-rose-400" />
-              </div>
-              <h3 className="text-zinc-200 font-sans font-semibold text-base mb-1 tracking-tight">
-                Source Code Workspace
-              </h3>
-              <p className="text-zinc-500 font-sans text-xs max-w-sm leading-relaxed">
-                Weave builds and updates application files dynamically. When code generation is connected, files will render directly here.
-              </p>
-            </div>
+            <FileExplorer
+              files={files}
+              selectedPath={selectedFilePath}
+              onSelect={setSelectedFilePath}
+              isLoading={isLoadingFiles}
+            />
           </div>
         </div>
       </main>
@@ -388,8 +366,9 @@ interface MessageProps {
 }
 
 export function UserMessage({ text, timestamp }: MessageProps) {
-  const displayTime = (typeof timestamp === "string" ? new Date(timestamp) : timestamp)
-    .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const displayTime = (
+    typeof timestamp === "string" ? new Date(timestamp) : timestamp
+  ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="flex gap-3 max-w-[85%] ml-auto flex-row-reverse">
@@ -409,9 +388,14 @@ export function UserMessage({ text, timestamp }: MessageProps) {
   );
 }
 
-export function AiMessage({ text, timestamp }: MessageProps) {
-  const displayTime = (typeof timestamp === "string" ? new Date(timestamp) : timestamp)
-    .toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+export function AiMessage({
+  text,
+  timestamp,
+  toolCalls,
+}: MessageProps & { toolCalls?: any[] }) {
+  const displayTime = (
+    typeof timestamp === "string" ? new Date(timestamp) : timestamp
+  ).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
     <div className="flex gap-3 max-w-[85%] mr-auto">
@@ -419,11 +403,22 @@ export function AiMessage({ text, timestamp }: MessageProps) {
         <Bot className="w-4 h-4" />
       </div>
 
-      <div className="space-y-1">
-        <div className="px-4.5 py-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap bg-[#1f161c]/80 text-zinc-200 border border-rose-950/30 rounded-tl-none">
-          {text}
-        </div>
-        <div className="text-[10px] text-zinc-500 font-medium text-left">
+      <div className="space-y-1.5 flex-1 max-w-[calc(100%-2.5rem)]">
+        {text && (
+          <div className="px-4.5 py-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap bg-[#1f161c]/80 text-zinc-200 border border-rose-950/30 rounded-tl-none">
+            {text}
+          </div>
+        )}
+
+        {toolCalls && toolCalls.length > 0 && (
+          <div className="flex flex-col gap-2 mt-1">
+            {toolCalls.map((tc, idx) => (
+              <ToolActivity key={idx} tool={tc.tool} args={tc.args} />
+            ))}
+          </div>
+        )}
+
+        <div className="text-[10px] text-zinc-500 font-medium text-left px-1">
           {displayTime}
         </div>
       </div>

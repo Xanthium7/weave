@@ -65,11 +65,11 @@ export function useStreamChat(projectId: string) {
     setIsStreaming(true);
 
     try {
-      const streamValue = await getAiResponse(projectId, text);
-      for await (const event of readStreamableValue(streamValue)) {
-        if (!event) continue;
-        handleStreamEvent(event, aiMsgId);
-      }
+      // const streamValue = await getAiResponse(projectId, text);
+      // for await (const event of readStreamableValue(streamValue)) {
+      //   if (!event) continue;
+      //   handleStreamEvent(event, aiMsgId);
+      // }
     } catch (error: any) {
       console.error("[sendinMessage] error:", error);
       updateAiMessage(aiMsgId, (msg) => ({

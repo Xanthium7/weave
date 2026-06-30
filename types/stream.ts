@@ -11,4 +11,5 @@ export type StreamEvent =
   | { type: "restored-from-backup" }
   | { type: "backup-complete"; version: number }
   | { type: "error"; content: string }
+  | { type: "workspace-sync"; files: Record<string, string> }
   | { type: "done" };

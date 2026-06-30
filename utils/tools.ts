@@ -11,8 +11,6 @@ export const readFile = async (sandbox: Sandbox, path: string) => {
   }
 };
 
-
-
 export const writeFile = async (
   sandbox: Sandbox,
   path: string,
@@ -68,49 +66,46 @@ export const listFiles = async (
   }
 };
 
-
-export const deletFile = async(sandbox: Sandbox, path: string) => {
-    try{
-        await sandbox.files.remove(path)
-    }
-    catch (err: any) {
+export const deletFile = async (sandbox: Sandbox, path: string) => {
+  try {
+    await sandbox.files.remove(path);
+  } catch (err: any) {
     throw new Error(`Failed to delete file in ${path}: ${err.message}`);
   }
-}
-
+};
 
 export const runCommand = async (
   sandbox: Sandbox,
-  command : string,
-  options?: { cwd?: string, background?: boolean}
+  command: string,
+  options?: { cwd?: string; background?: boolean },
 ) => {
   try {
-    const process = await sandbox.commands.run(command, options)
+    const process = await sandbox.commands.run(command, options);
     return {
       stdout: process.stdout,
       stderr: process.stderr,
-      exitCode: process.exitCode?? 0
-    }
-  }catch(error: any){
-    throw new Error(`Failed to run command ${command}: ${error.message}`)
+      exitCode: process.exitCode ?? 0,
+    };
+  } catch (error: any) {
+    throw new Error(`Failed to run command ${command}: ${error.message}`);
   }
+};
 
-}
-
-// llm tools schema 
+// llm tools schema
 const listFilesTool = {
   name: "listFiles",
-  description: "Lists all files and subdirectories in a directory path inside the sandbox.",
+  description:
+    "Lists all files and subdirectories in a directory path inside the sandbox.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      path: { 
-        type: Type.STRING, 
-        description: "The absolute  directory path to list." 
-      }
+      path: {
+        type: Type.STRING,
+        description: "The absolute  directory path to list.",
+      },
     },
-    required: ["path"]
-  }
+    required: ["path"],
+  },
 };
 
 const readFileTool = {
@@ -121,11 +116,11 @@ const readFileTool = {
     properties: {
       path: {
         type: Type.STRING,
-        description: "The absolute path of the file to read."
-      }
+        description: "The absolute path of the file to read.",
+      },
     },
-    required: ["path"]
-  }
+    required: ["path"],
+  },
 };
 
 const deletFileTool = {
@@ -136,58 +131,61 @@ const deletFileTool = {
     properties: {
       path: {
         type: Type.STRING,
-        description: "The absolute path of the file to delete."
-      }
+        description: "The absolute path of the file to delete.",
+      },
     },
-    required: ["path"]
-  }
+    required: ["path"],
+  },
 };
 
 const updateFileTool = {
   name: "updateFile",
-  description: "Replaces a contiguous block of lines in a file with new content.",
+  description:
+    "Replaces a contiguous block of lines in a file with new content.",
   parameters: {
     type: Type.OBJECT,
     properties: {
       path: {
         type: Type.STRING,
-        description: "The absolute path of the file to update."
+        description: "The absolute path of the file to update.",
       },
       startLine: {
         type: Type.INTEGER,
-        description: "The line number where the replacement should start (1-indexed)."
+        description:
+          "The line number where the replacement should start (1-indexed).",
       },
       endLine: {
         type: Type.INTEGER,
-        description: "The line number where the replacement should end (inclusive)."
+        description:
+          "The line number where the replacement should end (inclusive).",
       },
       replacementContent: {
         type: Type.STRING,
-        description: "The new content to write in place of the target lines."
-      }
+        description: "The new content to write in place of the target lines.",
+      },
     },
-    required: ["path", "startLine", "endLine", "replacementContent"]
-  }
+    required: ["path", "startLine", "endLine", "replacementContent"],
+  },
 };
-
 
 const writeFileTool = {
   name: "writeFile",
-  description: "Creates or overwrites a file with the given content in the sandbox.",
+  description:
+    "Creates or overwrites a file with the given content in the sandbox.",
   parameters: {
     type: Type.OBJECT,
     properties: {
-      path: { 
-        type: Type.STRING, 
-        description: "The destination file path inside the sandbox." 
+      path: {
+        type: Type.STRING,
+        description: "The destination file path inside the sandbox.",
       },
-      fileContents: { 
-        type: Type.STRING, 
-        description: "The text content to write into the file." 
-      }
+      fileContents: {
+        type: Type.STRING,
+        description: "The text content to write into the file.",
+      },
     },
-    required: ["path", "fileContents"]
-  }
+    required: ["path", "fileContents"],
+  },
 };
 
 const runCommandTool = {
@@ -198,34 +196,37 @@ const runCommandTool = {
     properties: {
       command: {
         type: Type.STRING,
-        description: "The shell command to run, e.g., 'npm install', 'git clone', or 'npm run dev -- --host 0.0.0.0'."
+        description:
+          "The shell command to run, e.g., 'npm install', 'git clone', or 'npm run dev -- --host 0.0.0.0'.",
       },
       cwd: {
         type: Type.STRING,
-        description: "The directory inside the sandbox where the command should execute."
+        description:
+          "The directory inside the sandbox where the command should execute.",
       },
       background: {
         type: Type.BOOLEAN,
-        description: "Whether to run the command in the background (use true for starting dev servers)."
-      }
+        description:
+          "Whether to run the command in the background (use true for starting dev servers).",
+      },
     },
-    required: ["command"]
-  }
+    required: ["command"],
+  },
 };
 
 export async function executeTool(
   sandbox: Sandbox,
   toolName: string,
-  args: Record<string,  unknown>,
-  stream: ReturnType<typeof createStreamableValue<StreamEvent>>
-){
+  args: Record<string, unknown>,
+  stream?: ReturnType<typeof createStreamableValue<StreamEvent>>,
+) {
   try {
     switch (toolName) {
       case "writeFile": {
         const path = args.path as string;
         const content = args.fileContents as string;
         await writeFile(sandbox, path, content);
-        stream.update({ type: "file-write", path, content });
+        // stream.update({ type: "file-write", path, content });
         return { success: true, path };
       }
 
@@ -238,13 +239,14 @@ export async function executeTool(
       case "updateFile": {
         const path = args.path as string;
         await updateFile(
-          sandbox, path,
+          sandbox,
+          path,
           args.startLine as number,
           args.endLine as number,
-          args.replacementContent as string
+          args.replacementContent as string,
         );
         const updatedContent = await readFile(sandbox, path);
-        stream.update({ type: "file-write", path, content: updatedContent });
+        // stream.update({ type: "file-write", path, content: updatedContent });
         return { success: true, path };
       }
 
@@ -257,35 +259,43 @@ export async function executeTool(
       case "deleteFile": {
         const path = args.path as string;
         await deletFile(sandbox, path);
-        stream.update({ type: "file-delete", path });
+        // stream.update({ type: "file-delete", path });
         return { success: true, path };
       }
 
       case "runCommand": {
         const command = args.command as string;
-        stream.update({ type: "command-run", command });
+        // stream.update({ type: "command-run", command });
 
         const result = await runCommand(sandbox, command, {
           cwd: args.cwd as string | undefined,
           background: args.background as boolean | undefined,
         });
 
-        stream.update({
-          type: "command-output",
-          stdout: result.stdout,
-          stderr: result.stderr,
-          exitCode: result.exitCode,
-        });
+        // stream.update({
+        //   type: "command-output",
+        //   stdout: result.stdout,
+        //   stderr: result.stderr,
+        //   exitCode: result.exitCode,
+        // });
 
-        if (args.background && (command.includes("dev") || command.includes("start"))) {
+        if (
+          args.background &&
+          (command.includes("dev") || command.includes("start"))
+        ) {
           await new Promise((r) => setTimeout(r, 3000));
           try {
             const host = sandbox.getHost(3000);
-            stream.update({ type: "preview-url", url: `https://${host}` });
+            // stream.update({ type: "preview-url", url: `https://${host}` });
+            console.log("preview urll", `https://${host}`)
           } catch {}
         }
 
-        return { stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode };
+        return {
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+        };
       }
 
       default:
@@ -297,9 +307,6 @@ export async function executeTool(
   }
 }
 
-
-
-
 export const toolsConfig = [
   {
     functionDeclarations: [
@@ -308,7 +315,7 @@ export const toolsConfig = [
       readFileTool,
       deletFileTool,
       updateFileTool,
-      runCommandTool
-    ]
-  }
+      runCommandTool,
+    ],
+  },
 ];
