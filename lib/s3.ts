@@ -21,8 +21,20 @@ const BUCKET = process.env.S3_BUCKET_NAME!;
 
 const PROJECT_DIR = "/home/user/LovableProject";
 
-export const backupToS3 = async (sandbox: Sandbox, projectId: string) => {
-  const currentVersion = await getLatestVersion(projectId);
+export const backupToS3 = async (
+  sandbox: Sandbox,
+  projectId: string,
+  s3BackupKey?: string,
+) => {
+  let currentVersion = 0;
+  if (s3BackupKey) {
+    const match = s3BackupKey.match(/\/v(\d+)\.tar\.gz$/);
+    if (match) {
+      currentVersion = parseInt(match[1], 10);
+    }
+  } else {
+    currentVersion = await getLatestVersion(projectId);
+  }
   const nextVersion = currentVersion + 1;
 
   const check = await sandbox.commands.run(
@@ -38,7 +50,9 @@ export const backupToS3 = async (sandbox: Sandbox, projectId: string) => {
     { timeoutMs: 30000 },
   );
   if (tarResult.exitCode !== 0) {
-    throw new Error(`Tar archiving failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`);
+    throw new Error(
+      `Tar archiving failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`,
+    );
   }
 
   const tarBytes = await sandbox.files.read("/tmp/backup.tar.gz", {
@@ -86,11 +100,16 @@ export const restoreIntoSandbox = async (
     bodyBytes.buffer as ArrayBuffer,
   );
   await sandbox.commands.run(`mkdir -p ${PROJECT_DIR}`);
-  const tarResult = await sandbox.commands.run(`tar -xzf /tmp/backup.tar.gz -C ${PROJECT_DIR}`, {
-    timeoutMs: 30000,
-  });
+  const tarResult = await sandbox.commands.run(
+    `tar -xzf /tmp/backup.tar.gz -C ${PROJECT_DIR}`,
+    {
+      timeoutMs: 30000,
+    },
+  );
   if (tarResult.exitCode !== 0) {
-    throw new Error(`Tar extraction failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`);
+    throw new Error(
+      `Tar extraction failed with exit code ${tarResult.exitCode}: ${tarResult.stderr}`,
+    );
   }
 
   await sandbox.commands.run("rm -f /tmp/backup.tar.gz");

@@ -12,44 +12,87 @@ export async function bootstrapProject(
   sandbox: Sandbox,
   projectDir: string = "/home/user/LovableProject",
 ) {
-  // Detect if package.json is in a subdirectory
+  // Detect if package.json is in a subdirectory - these are there cause modle dumb
   let targetDir = projectDir;
+  // try {
+  //   const files = await sandbox.files.list(projectDir);
+  //   const hasPackageJson = files.some((f) => f.name === "package.json");
+  //   if (!hasPackageJson) {
+  //     for (const file of files) {
+  //       if (file.type === "dir") {
+  //         const subFiles = await sandbox.files.list(`${projectDir}/${file.name}`);
+  //         if (subFiles.some((sf) => sf.name === "package.json")) {
+  //           targetDir = `${projectDir}/${file.name}`;
+  //           console.log(`[Bootstrap]: Detected package.json in subdirectory: ${targetDir}`);
+  //           break;
+  //         }
+  //       }
+  //     }
+  //   }
+  // } catch (e) {
+  //   console.error("[Bootstrap] Error detecting project structure:", e);
+  // }
+
   try {
-    const files = await sandbox.files.list(projectDir);
-    const hasPackageJson = files.some((f) => f.name === "package.json");
-    if (!hasPackageJson) {
-      for (const file of files) {
-        if (file.type === "dir") {
-          const subFiles = await sandbox.files.list(`${projectDir}/${file.name}`);
-          if (subFiles.some((sf) => sf.name === "package.json")) {
-            targetDir = `${projectDir}/${file.name}`;
-            console.log(`[Bootstrap]: Detected package.json in subdirectory: ${targetDir}`);
-            break;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.error("[Bootstrap] Error detecting project structure:", e);
+    console.log(`[Bootstrap]: Running npm install in ${targetDir}...`);
+    const install = await sandbox.commands.run(`cd ${targetDir} && npm install`, {
+      timeoutMs: 5 * 60 * 1000, // 5 mins
+    });
+    if (install.stderr) console.error("[Bootstrap] npm install stderr:", install.stderr);
+  } catch (err: any) {
+    console.error("[Bootstrap] npm install failed (but proceeding to start server):", err.message);
   }
 
-  console.log(`[Bootstrap]: Running npm install in ${targetDir}...`);
-  const install = await sandbox.commands.run(`cd ${targetDir} && npm install`, {
-    timeoutMs: 5 * 60 * 1000, // 5 mins
-  });
-  if (install.stderr) console.error("[Bootstrap] npm install stderr:", install.stderr);
+  // Detect if it is a Next.js or Vite/other project to run the correct host exposing flag
+  let isNext = false;
+  try {
+    const packageJsonStr = await sandbox.files.read(`${targetDir}/package.json`);
+    const packageJson = JSON.parse(packageJsonStr);
+    isNext = !!(packageJson.dependencies?.next || packageJson.devDependencies?.next);
+  } catch (e) {
+    console.error("[Bootstrap] Error reading package.json to identify project type:", e);
+  }
 
   console.log(`[Bootstrap]: Starting dev server in ${targetDir}...`);
-  await sandbox.commands.run(
-    `cd ${targetDir} && npm run dev -- --host 0.0.0.0`,
-    {
-      background: true,
-    },
-  );
+  try {
+    if (isNext) {
+      // Next.js uses -H or --hostname to bind host
+      await sandbox.commands.run(
+        `cd ${targetDir} && npm run dev -- -H 0.0.0.0`,
+        { background: true },
+      );
+    } else {
+      // Vite and most others use --host
+      await sandbox.commands.run(
+        `cd ${targetDir} && npm run dev -- --host 0.0.0.0`,
+        { background: true },
+      );
+    }
+  } catch (err: any) {
+    console.error("[Bootstrap] Failed to execute npm run dev command:", err.message);
+  }
 
-  // give server time to start (Next.js first build takes longer)
-  console.log(`[Bootstrap]: Waiting for server to be ready...`);
-  await new Promise((resolve) => setTimeout(resolve, 15000));
+  // dynamically poll port 3000 to wait for the server to be ready (up to 40s) - debuggin
+  // console.log(`[Bootstrap]: Waiting for server to start listening on port 3000...`);
+  // let isReady = false;
+  // for (let i = 0; i < 20; i++) {
+  //   try {
+  //     const check = await sandbox.commands.run(`curl -s -o /dev/null -w "%{http_code}" http://localhost:3000`, {
+  //       timeoutMs: 2000,
+  //     });
+  //     const httpCode = check.stdout.trim();
+  //     if (httpCode !== "000" && httpCode !== "") {
+  //       isReady = true;
+  //       console.log(`[Bootstrap]: Server is ready! Response code: ${httpCode}`);
+  //       break;
+  //     }
+  //   } catch {}
+  //   await new Promise((resolve) => setTimeout(resolve, 2000));
+  // }
+
+  // if (!isReady) {
+  //   console.log(`[Bootstrap]: Server on port 3000 did not respond within 40s. Proceeding anyway...`);
+  // }
 
   try {
     const host = sandbox.getHost(3000);

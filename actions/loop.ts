@@ -49,7 +49,7 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
       ];
     }
 
-    // check if cached sandbox is alive
+    
     let isSandboxAlive = false;
     if (sandboxCache.has(projectId)) {
       const cachedSandbox = sandboxCache.get(projectId)!;
@@ -57,6 +57,10 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
         sandbox = cachedSandbox;
         isSandboxAlive = true;
         console.log("[Sandbox]: Reusing existing sandbox from cache.");
+        
+        await sandbox.setTimeout(10 * 60 * 1000);
+        console.log("[Sandbox]: Reset timeout to 10 minutes on reuse.");
+        
         // stream.update({
         //   type: "text-delta",
         //   content: "\n[Sandbox restored from cache]\n",
@@ -67,13 +71,11 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
       }
     }
 
-    // create a new sandbox if no alive cached sandbox exists
     if (!isSandboxAlive) {
       console.log("[Sandbox]: Creating new sandbox...");
       sandbox = await createSandbox();
       sandboxCache.set(projectId, sandbox);
 
-      // Ensure the project directory exists
       try {
         await sandbox.commands.run(`mkdir -p ${PROJECT_DIR}`);
       } catch (err) {
@@ -114,6 +116,7 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
 
       const streamResponse = await createAiStream(history);
       let fullText = "";
+      const modelParts: any[] = [];
       const functionCalls: { name: string; args: Record<string, unknown> }[] = [];
 
       for await (const chunk of streamResponse) {
@@ -123,6 +126,7 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
         for (const part of candidate.content.parts) {
           if (part.text) {
             fullText += part.text;
+            process.stdout.write(part.text); 
             // stream.update({ type: "text-delta", content: part.text });
           }
           if (part.functionCall) {
@@ -130,6 +134,7 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
               name: part.functionCall.name!,
               args: part.functionCall.args as Record<string, unknown>,
             });
+            modelParts.push(part);
           }
         }
       }
@@ -137,9 +142,7 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
       if (functionCalls.length > 0) {
         history.push({
           role: "model",
-          parts: functionCalls.map((fc) => ({
-            functionCall: { name: fc.name, args: fc.args },
-          })),
+          parts: modelParts,
         });
 
         const functionResponse = [];
@@ -168,6 +171,8 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
             default:
               console.log(`[Tool Call]: ${fc.name}`);
           }
+
+          // * EXECUTE THE TOOL * 
           const result = await executeTool(
             sandbox!,
             fc.name,
@@ -203,7 +208,9 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
     // fallback: print the preview url
     try {
       const host = sandbox!.getHost(3000);
-      console.log(`[Preview URL]: https://${host}`);
+      console.log(`[Preview URL 3000]: https://${host}`);
+      const hostv  =sandbox!.getHost(5173);
+      console.log(`[Preview URL 5173]: https://${hostv}`);
       // stream.update({ type: "preview-url", url: `https://${host}` });
     } catch (err) {
       console.error("Could not get preview URL");
@@ -213,6 +220,8 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
       // });
     }
 
+    
+
     // save context back to db
     await prisma.project.update({
       where: { id: projectId },
@@ -221,7 +230,11 @@ export const runAgentLoop = async (projectId: string, userMessage: string) => {
 
     // backup to s3
     try {
-      const version = await backupToS3(sandbox!, projectId);
+      const version = await backupToS3(
+        sandbox!,
+        projectId,
+        project.s3BackupKey ?? undefined,
+      );
       await prisma.project.update({
         where: { id: projectId },
         data: {

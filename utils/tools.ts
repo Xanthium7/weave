@@ -3,9 +3,43 @@ import { createStreamableValue } from "@ai-sdk/rsc";
 import type Sandbox from "@e2b/code-interpreter";
 import { Type } from "@google/genai";
 
+const PROJECT_DIR = "/home/user/LovableProject";
+
+export function resolveSandboxPath(path: string): string {
+  // Normalize double slashes
+  path = path.replace(/\/+/g, "/");
+
+  // Handle home directory representation
+  if (path === "/home/user" || path === "/home/user/") {
+    return PROJECT_DIR;
+  }
+
+  // If it's already under the project dir, or it is in /tmp, leave it
+  if (path.startsWith(PROJECT_DIR)) {
+    return path;
+  }
+  if (path.startsWith("/tmp")) {
+    return path;
+  }
+
+  // If it is absolute under /home/user, redirect to PROJECT_DIR
+  if (path.startsWith("/home/user/")) {
+    return path.replace(/^\/home\/user\//, `${PROJECT_DIR}/`);
+  }
+
+  // If it's absolute but not under home/user or /tmp (e.g. /app/package.json)
+  if (path.startsWith("/")) {
+    return `${PROJECT_DIR}${path}`;
+  }
+
+  // If it's relative, make it relative to PROJECT_DIR
+  return `${PROJECT_DIR}/${path}`;
+}
+
 export const readFile = async (sandbox: Sandbox, path: string) => {
   try {
-    return await sandbox.files.read(path);
+    const resolvedPath = resolveSandboxPath(path);
+    return await sandbox.files.read(resolvedPath);
   } catch (err: any) {
     throw new Error(`Failed to read file at ${path}: ${err.message}`);
   }
@@ -17,7 +51,8 @@ export const writeFile = async (
   fileContents: string,
 ) => {
   try {
-    await sandbox.files.write(path, fileContents);
+    const resolvedPath = resolveSandboxPath(path);
+    await sandbox.files.write(resolvedPath, fileContents);
   } catch (err: any) {
     throw new Error(`Failed to write file at ${path}: ${err.message}`);
   }
@@ -31,7 +66,8 @@ export const updateFile = async (
   replacementContent: string,
 ): Promise<void> => {
   try {
-    const originalContent = await sandbox.files.read(path);
+    const resolvedPath = resolveSandboxPath(path);
+    const originalContent = await sandbox.files.read(resolvedPath);
     const isCrlf = originalContent.includes("\r\n");
     const lineEnding = isCrlf ? "\r\n" : "\n";
     const lines = originalContent.split(lineEnding);
@@ -40,7 +76,7 @@ export const updateFile = async (
     const replacementLines = replacementContent.split(/\r?\n/);
     lines.splice(startIndex, deleteCount, ...replacementLines);
     const updatedContent = lines.join(lineEnding);
-    await sandbox.files.write(path, updatedContent);
+    await sandbox.files.write(resolvedPath, updatedContent);
   } catch (error: any) {
     throw new Error(
       `Failed to update lines ${startLine}-${endLine} in file ${path}: ${error.message}`,
@@ -53,12 +89,12 @@ export const listFiles = async (
   path: string,
 ): Promise<Array<{ name: string; path: string; isDir: boolean }>> => {
   try {
-    const files = await sandbox.files.list(path);
+    const resolvedPath = resolveSandboxPath(path);
+    const files = await sandbox.files.list(resolvedPath);
     return files.map((file) => ({
       name: file.name,
       // Replaces double slashes if any (e.g. //src -> /src)
       path: `${path}/${file.name}`.replace(/\/+/g, "/"),
-
       isDir: file.type === "dir",
     }));
   } catch (err: any) {
@@ -68,7 +104,8 @@ export const listFiles = async (
 
 export const deletFile = async (sandbox: Sandbox, path: string) => {
   try {
-    await sandbox.files.remove(path);
+    const resolvedPath = resolveSandboxPath(path);
+    await sandbox.files.remove(resolvedPath);
   } catch (err: any) {
     throw new Error(`Failed to delete file in ${path}: ${err.message}`);
   }
@@ -80,7 +117,11 @@ export const runCommand = async (
   options?: { cwd?: string; background?: boolean },
 ) => {
   try {
-    const process = await sandbox.commands.run(command, options);
+    const cwd = options?.cwd ? resolveSandboxPath(options.cwd) : PROJECT_DIR;
+    const process = await sandbox.commands.run(command, {
+      ...options,
+      cwd,
+    });
     return {
       stdout: process.stdout,
       stderr: process.stderr,

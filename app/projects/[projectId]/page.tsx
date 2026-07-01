@@ -18,7 +18,6 @@ import {
   ChevronRight,
   Maximize2,
 } from "lucide-react";
-import { useStreamChat } from "@/hooks/useStreamChat";
 import { ToolActivity } from "@/components/tool-activity";
 import { FileExplorer } from "@/components/file-explorer";
 
@@ -31,18 +30,28 @@ export default function ProjectPage() {
   const [project, setProject] = useState<any>(null);
   const [loadingProject, setLoadingProject] = useState(true);
 
-  // Chat state from the useStreamChat hook
-  const {
-    messages,
-    setMessages,
-    isStreaming,
-    loadingFiles: isLoadingFiles,
-    sendMessage,
-    loadFilesFromS3,
-    previewUrl,
-    files,
-    activeToolCall,
-  } = useStreamChat(projectId);
+  // Chat and file explorer mockup states (decoupled from sandbox and S3)
+  const [messages, setMessages] = useState<any[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const previewUrl = "/mock-preview.html";
+
+  const [files, setFiles] = useState<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    map.set(
+      "src/App.tsx",
+      `import React, { useState } from 'react';\n\nexport default function App() {\n  const [count, setCount] = useState(0);\n\n  return (\n    <div className="min-h-screen bg-[#0d070b] text-zinc-100 flex flex-col items-center justify-center p-6 relative overflow-hidden">\n      {/* Glow background */}\n      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-rose-500/10 rounded-full blur-[100px] pointer-events-none" />\n\n      <div className="max-w-md w-full bg-[#181115]/80 border border-rose-950/20 backdrop-blur-xl rounded-2xl p-8 text-center shadow-2xl relative z-10">\n        <h1 className="text-3xl font-bold bg-gradient-to-tr from-rose-400 to-orange-400 bg-clip-text text-transparent mb-4 tracking-tight">\n          Interactive Sandbox\n        </h1>\n        <p className="text-zinc-400 text-sm mb-6 leading-relaxed font-sans">\n          This preview is loaded inside a high-fidelity workspace. Type adjustments in the chat bar on the left to simulate code updates!\n        </p>\n        <div className="p-4 bg-rose-950/15 border border-rose-950/10 rounded-xl mb-6 flex flex-col items-center">\n          <span className="text-[11px] font-bold text-rose-400/60 uppercase tracking-widest mb-2">Simulated Interactive State</span>\n          <button \n            onClick={() => setCount(prev => prev + 1)}\n            className="px-6 py-2 bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all text-white text-xs font-semibold rounded-full shadow-lg shadow-rose-500/20 cursor-pointer"\n          >\n            Clicked {count} times\n          </button>\n        </div>\n        <div className="text-[10px] text-zinc-500 font-mono">src/App.tsx</div>\n      </div>\n    </div>\n  );\n}`
+    );
+    map.set(
+      "src/index.css",
+      `@import "tailwindcss";\n\nbody {\n  margin: 0;\n  background-color: #0d070b;\n  font-family: system-ui, sans-serif;\n}`
+    );
+    map.set(
+      "package.json",
+      `{\n  "name": "weave-mock-app",\n  "version": "1.0.0",\n  "dependencies": {\n    "react": "^19.0.0",\n    "react-dom": "^19.0.0",\n    "lucide-react": "^0.400.0"\n  }\n}`
+    );
+    return map;
+  });
 
   const [inputText, setInputText] = useState("");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -127,12 +136,12 @@ export default function ProjectPage() {
     fetchProject();
   }, [projectId]);
 
-  // Load project files on mount when project is available
+  // Auto-select first file on mount/load
   useEffect(() => {
-    if (project) {
-      loadFilesFromS3();
+    if (!selectedFilePath && files.size > 0) {
+      setSelectedFilePath(Array.from(files.keys())[0]);
     }
-  }, [project, loadFilesFromS3]);
+  }, [files, selectedFilePath]);
 
   // 3. Scroll to bottom of chat
   useEffect(() => {
@@ -145,7 +154,75 @@ export default function ProjectPage() {
 
     const text = inputText.trim();
     setInputText("");
-    await sendMessage(text);
+
+    // 1. Add user message
+    const userMsg = {
+      id: String(Date.now()),
+      sender: "user" as const,
+      text,
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setIsStreaming(true);
+
+    // 2. Simulate AI agent writing code and completing stream
+    setTimeout(() => {
+      // Simulate Bot starting writing task
+      const aiMsg = {
+        id: String(Date.now() + 1),
+        sender: "ai" as const,
+        text: "Updating application components to reflect your request. Modifying source files...",
+        timestamp: new Date(),
+        toolCalls: [
+          {
+            tool: "writeFile",
+            args: { path: "src/App.tsx" }
+          }
+        ]
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+
+      // Edit files in response to key phrases to make the demo feel highly interactive
+      setFiles((prevMap) => {
+        const nextMap = new Map(prevMap);
+        const lowerText = text.toLowerCase();
+        let newAppCode = prevMap.get("src/App.tsx") || "";
+
+        if (lowerText.includes("color") || lowerText.includes("theme") || lowerText.includes("dark") || lowerText.includes("blue")) {
+          newAppCode = newAppCode.replace("bg-[#0d070b]", "bg-[#090b14]")
+                                 .replace("bg-rose-500/10", "bg-violet-500/10")
+                                 .replace("border-rose-950/20", "border-violet-950/20")
+                                 .replace("bg-rose-950/15", "bg-violet-950/15")
+                                 .replace("bg-rose-500", "bg-violet-500")
+                                 .replace("shadow-rose-500/20", "shadow-violet-500/20")
+                                 .replace("text-rose-400", "text-violet-400")
+                                 .replace("from-rose-400 to-orange-400", "from-violet-400 to-cyan-400");
+        } else if (lowerText.includes("button") || lowerText.includes("text") || lowerText.includes("heading")) {
+          newAppCode = newAppCode.replace("Interactive Sandbox", "Customized Application")
+                                 .replace("Type adjustments in the chat bar", "Your application interface has been rebuilt!");
+        }
+
+        nextMap.set("src/App.tsx", newAppCode);
+        return nextMap;
+      });
+
+      // Complete stream
+      setTimeout(() => {
+        setIsStreaming(false);
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].sender === "ai") {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              text: `I've successfully updated your code inside the workspace. The modifications have been written to \`src/App.tsx\`.\n\nYou can review the updated source in the "Code" tab or try clicking the button in the "Preview" panel!`,
+              timestamp: new Date(),
+            };
+          }
+          return updated;
+        });
+      }, 1000);
+    }, 800);
   };
 
   if (session.status === "loading" || loadingProject) {
